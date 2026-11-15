@@ -1,0 +1,37 @@
+name: Verify fix
+on: push
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      DJANGO_SETTINGS_MODULE: settings.ci
+      DJANGO_MEDIA_ROOT: /tmp/wger-test
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@v7
+      - run: uv sync --group dev --python 3.13 && mkdir -p /tmp/wger-test
+      - name: Ruff (as in ruff.yml), on the fix's files
+        run: |
+          uv run ruff check --output-format=github wger/nutrition/views/ingredient.py wger/nutrition/tests/test_ingredient_overview.py
+          uv run ruff format --check wger/nutrition/views/ingredient.py wger/nutrition/tests/test_ingredient_overview.py
+      - name: Migrations check (as in ci.yml)
+        run: uv run ./manage.py makemigrations --check --dry-run
+      - name: Full test suite with the fix (as in ci.yml)
+        run: uv run ./manage.py test --parallel auto
+      - name: Query counts with the fix
+        run: uv run ./manage.py test wger.nutrition.tests.test_verify_counts -v 2
+      - name: Before the fix (upstream ingredient.py)
+        run: |
+          git checkout be0b52c430d9dead7835a88f1bd4c04a73f1de98 -- wger/nutrition/views/ingredient.py
+          uv run ./manage.py test wger.nutrition.tests.test_verify_counts -v 2
+          if uv run ./manage.py test wger.nutrition.tests.test_ingredient_overview -v 2; then
+            echo "::error::the new test passes without the fix"; exit 1
+          fi
+          echo "the new test fails without the fix, as expected"
