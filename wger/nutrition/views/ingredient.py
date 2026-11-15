@@ -97,7 +97,8 @@ class IngredientListView(ListView):
                                     (rows are reversed in get_context_data)
         """
         language = load_language()
-        queryset = Ingredient.objects.filter(language=language)
+        # The template shows each ingredient's image: load them with the page.
+        queryset = Ingredient.objects.filter(language=language).select_related('image')
         filterset = self.filterset_class(self.request.GET or None, queryset=queryset)
         qs = filterset.qs
 

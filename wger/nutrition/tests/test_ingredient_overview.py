@@ -14,10 +14,13 @@
 # along with Workout Manager.  If not, see <http://www.gnu.org/licenses/>.
 
 # Django
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
 # wger
 from wger.core.tests.base_testcase import WgerTestCase
+from wger.nutrition.models import Ingredient
 from wger.utils.constants import PAGINATION_OBJECTS_PER_PAGE
 
 
@@ -188,6 +191,44 @@ class IngredientOverviewTestCase(WgerTestCase):
         if response.context['has_next']:
             self.assertIn('is_vegan=1', response.context['next_url'])
             self.assertIn('after=', response.context['next_url'])
+
+    def test_overview_query_count_does_not_grow_with_ingredients(self):
+        """
+        The overview loads the images of the listed ingredients with the page
+        """
+        self.user_login('admin')
+        data = {
+            'name': 'Test ingredient',
+            'language': 2,
+            'sodium': 10.54,
+            'energy': 176,
+            'fat': 8.19,
+            'carbohydrates_sugar': 0.0,
+            'fat_saturated': 3.24,
+            'fiber': 0.0,
+            'protein': 25.63,
+            'carbohydrates': 0.0,
+            'license': 1,
+            'license_author': 'internet',
+        }
+        for i in range(0, 20):
+            self.client.post(reverse('nutrition:ingredient:add'), data)
+        self.user_logout()
+
+        url = reverse('nutrition:ingredient:list')
+        ingredients = Ingredient.objects.filter(language=2).order_by('-id')
+        ids = list(ingredients.values_list('id', flat=True))
+
+        def count_queries(rows):
+            # The page after this id lists the last `rows` ingredients
+            with CaptureQueriesContext(connection) as queries:
+                response = self.client.get(url, {'after': ids[rows]})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(len(response.context['ingredients_list']), rows)
+            return len(queries)
+
+        count_queries(2)
+        self.assertEqual(count_queries(2), count_queries(20))
 
     def ingredient_overview(self):
         """
